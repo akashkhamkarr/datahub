@@ -1,4 +1,4 @@
-import datetime
+import datetime, logging
 from typing import Dict, List, Optional, Set
 
 import pytest
@@ -567,7 +567,390 @@ def atlan_failed_query_entries_7() -> List[QueryEvent]:
         )
     ]
 
-def test_broken_atlan_lineage(atlan_failed_query_entries_7: List[QueryEvent]) -> None:
+FAILED_ATLAN_QUERY_V2_1 = """
+create or replace temp table all_latest_ratings as (
+select * from stg_data
+pivot(string_agg(prev_rating_value) as latest_rating, string_agg(prev_rating_name) as latest_perf_cycle for 
+   cast(prev_rating_rank as string)  in ('0','1','2')))
+"""
+
+@pytest.fixture
+def atlan_failed_query_entries_8() -> List[QueryEvent]:
+    return [
+        QueryEvent(
+            timestamp=datetime.datetime.now(tz=datetime.timezone.utc),
+            actor_email="unknown",  # Replace with actual service account if known
+            query=FAILED_ATLAN_QUERY_V2_1,  # Replace with your actual query string variable
+            statementType="CREATE_TABLE_AS_SELECT",
+            project_id="itp-aia-datalake",
+            referencedViews=[
+                BigQueryTableRef.from_string_name("projects/itp-aia-datalake/datasets/revenue/tables/stg_data"),
+            ],
+            destinationTable=BigQueryTableRef.from_string_name(
+                "projects/itp-aia-datalake/datasets/revenue/tables/all_latest_ratings"
+            ),
+        )
+    ]
+
+
+FAILED_ATLAN_QUERY_V2_2 = """
+create or replace table `itp-aia-datalake.asr_selfserve.tb_asr_key_account_stakeholders` as (
+    WITH key_account_stakeholders as (SELECT
+        recordtype.name as name,
+        question.Question_Text__c as Question_Text,
+        question.type__c as type,
+        Account__c as account_code,
+        account.name as account_name,
+        IFNULL(answer.Title__c, '') as title,
+        IFNULL(Stakeholder_Name__c, '') as Stakeholder_id,
+        IFNULL(contact.name, '') as Stakeholder_Name,
+        IFNULL(Buying_Role__c, '') as Buying_Role,
+        IFNULL(Buyer_Focus__c, '') as Buyer_Focus,
+        IFNULL(Speedboat__c, '') as Speedboat,
+        IFNULL(CISO_Type__c, '') as CISO_Type,
+        IFNULL(PANW_Contact__c, '') as PANW_Contact_id,
+        IFNULL(user.name, '') as PANW_Contact_Name,
+        IFNULL(Strength_of_Relationship__c, '') as Strength_of_Relationship,
+        IFNULL(Answer_Text__c, '') as Answer_Text,
+        account_stard.acct_territory_theatre,
+        account_stard.acct_territory_area,
+        account_stard.acct_territory_region,
+        account_stard.acct_territory_district,
+        account_stard.account_territory_owner,
+        account_stard.acct_territory_name,
+        security2000_ranking__c as strategy_account_ranking
+        FROM
+        `itp-aia-datalake.sfdc.account_strategy_answer__c` answer
+        LEFT JOIN (SELECT  * FROM `itp-aia-datalake.sfdc.account_strategy_question__c` ) question
+            ON answer.account_strategy_question__c = question.id
+        LEFT JOIN (SELECT * FROM `itp-aia-datalake.sfdc.recordtype`) recordtype
+            ON recordtype.id  = question.recordtypeid
+        LEFT JOIN (select id, name from `itp-aia-datalake.sfdc.user`) user
+            ON PANW_Contact__c = user.id
+        LEFT JOIN (select id, name from `itp-aia-datalake.sfdc.contact`) contact
+            ON Stakeholder_Name__c = contact.id
+        LEFT JOIN (select id, name, security2000_ranking__c from `itp-aia-datalake.sfdc.account`) account
+            ON answer.Account__c = account.id
+        LEFT JOIN (select * from `itp-aia-datalake.sales_dm.vw_account_stard_ssot`) account_stard
+            ON answer.Account__c = account_stard.account_id
+        WHERE recordtype.name = "Key Account Stakeholders" 
+        )
+        SELECT
+            key_account_stakeholders.* Except(Speedboat),
+            individual_speedboat AS Speedboat,
+        FROM
+            key_account_stakeholders,
+            UNNEST(
+                CASE 
+                    WHEN Speedboat IS NULL THEN [''] 
+                    ELSE SPLIT(Speedboat, ',') 
+                END
+            ) AS individual_speedboat
+)
+"""
+
+@pytest.fixture
+def atlan_failed_query_entries_9() -> List[QueryEvent]:
+    return [
+        QueryEvent(
+            timestamp=datetime.datetime.now(tz=datetime.timezone.utc),
+            actor_email="unknown",  # Replace with actual service account if known
+            query=FAILED_ATLAN_QUERY_V2_2,  # Replace with your actual query string variable
+            statementType="CREATE_TABLE_AS_SELECT",
+            project_id="itp-aia-datalake",
+            referencedViews=[
+                BigQueryTableRef.from_string_name("projects/itp-aia-datalake/datasets/sfdc/tables/account_strategy_answer__c"),
+                BigQueryTableRef.from_string_name("projects/itp-aia-datalake/datasets/sfdc/tables/account_strategy_question__c"),
+                BigQueryTableRef.from_string_name("projects/itp-aia-datalake/datasets/sfdc/tables/recordtype"),
+                BigQueryTableRef.from_string_name("projects/itp-aia-datalake/datasets/sfdc/tables/user"),
+                BigQueryTableRef.from_string_name("projects/itp-aia-datalake/datasets/sfdc/tables/contact"),
+                BigQueryTableRef.from_string_name("projects/itp-aia-datalake/datasets/sfdc/tables/account"),
+                BigQueryTableRef.from_string_name("projects/itp-aia-datalake/datasets/sales_dm/tables/vw_account_stard_ssot"),
+            ],
+            destinationTable=BigQueryTableRef.from_string_name(
+                "projects/itp-aia-datalake/datasets/asr_selfserve/tables/tb_asr_key_account_stakeholders"
+            ),
+        )
+    ]
+
+
+FAILED_ATLAN_QUERY_V2_3 = """
+create or replace table
+  /**e2e**/`itp-aia-datalake.cortex_dm.tb_xdr_prometheus_agents_metrics_daily_temp` as
+
+  select *,
+    mac_agents_wks_v7_6_agents + mac_agents_wks_v7_5_agents + mac_agents_wks_v7_4_agents + mac_agents_wks_v7_3_agents + mac_agents_wks_v7_2_agents + mac_agents_wks_v7_1_agents + mac_agents_wks_v7_0_agents + mac_agents_wks_v6_1_agents + mac_agents_wks_v6_0_agents + mac_agents_wks_v5_0_agents as mac_agents,
+    android_agents_mobile_v7_1_agents + android_agents_mobile_v7_0_agents + android_agents_mobile_v6_0_agents + android_agents_mobile_v5_0_agents as android_agents,
+    lnx_agents_containerized_v7_6_agents + lnx_agents_containerized_v7_5_agents + lnx_agents_srv_v7_6_agents + lnx_agents_srv_v7_5_agents + lnx_agents_srv_v7_4_agents + lnx_agents_srv_v7_3_agents + lnx_agents_srv_v7_2_agents + lnx_agents_srv_v7_1_agents + lnx_agents_srv_v7_0_agents + lnx_agents_srv_v6_1_agents + lnx_agents_srv_v6_0_agents + lnx_agents_srv_v5_0_agents as lnx_agents,
+    win_agents_srv_v7_6_agents + win_agents_srv_v7_5_agents + win_agents_srv_v7_4_agents + win_agents_srv_v7_3_agents + win_agents_srv_v7_2_agents + win_agents_srv_v7_1_agents + win_agents_srv_v7_0_agents + win_agents_srv_v6_1_agents + win_agents_srv_v6_0_agents + win_agents_srv_v5_0_agents + win_agents_wks_v7_6_agents + win_agents_wks_v7_5_agents + win_agents_wks_v7_4_agents + win_agents_wks_v7_3_agents + win_agents_wks_v7_2_agents + win_agents_wks_v7_1_agents + win_agents_wks_v7_0_agents + win_agents_wks_v6_1_agents + win_agents_wks_v6_0_agents + win_agents_wks_v5_0_agents as win_agents,
+  from
+  (
+  select
+    coalesce( nullif(account_mapping_paid_active.is_xdr_pro_product,false),nullif(account_mapping_trial_active.is_xdr_pro_product,false),nullif(account_mapping_paid_expired.is_xdr_pro_product,false),nullif(account_mapping_trial_expired.is_xdr_pro_product,false)) as is_xdr_pro_product,
+    coalesce( nullif(account_mapping_paid_active.is_xdr_prevent_product,false),nullif(account_mapping_trial_active.is_xdr_prevent_product,false),nullif(account_mapping_paid_expired.is_xdr_prevent_product,false),nullif(account_mapping_trial_expired.is_xdr_prevent_product,false)) as is_xdr_prevent_product,
+    coalesce( nullif(account_mapping_paid_active.is_xdr_tb_product,false),nullif(account_mapping_trial_active.is_xdr_tb_product,false),nullif(account_mapping_paid_expired.is_xdr_tb_product,false),nullif(account_mapping_trial_expired.is_xdr_tb_product,false)) as is_xdr_tb_product,
+    coalesce( nullif(account_mapping_paid_active.is_xdr_gb_product,false),nullif(account_mapping_trial_active.is_xdr_gb_product,false),nullif(account_mapping_paid_expired.is_xdr_gb_product,false),nullif(account_mapping_trial_expired.is_xdr_gb_product,false)) as is_xdr_gb_product,
+    coalesce( nullif(account_mapping_paid_active.is_traps_product,false),nullif(account_mapping_trial_active.is_traps_product,false),nullif(account_mapping_paid_expired.is_traps_product,false),nullif(account_mapping_trial_expired.is_traps_product,false)) as is_traps_product,
+    coalesce(xsiam_account_mapping_paid_active.lcaas_id,account_mapping_paid_active.lcaas_id,xsiam_account_mapping_trial_active.lcaas_id,account_mapping_trial_active.lcaas_id,account_mapping_paid_expired.lcaas_id,account_mapping_trial_expired.lcaas_id,agent.lcaas_id,pr.lcaas_id,tb_usage.lcaas_id) as lcaas_id,
+    coalesce(xsiam_account_mapping_paid_active.xdrepplicensecount,account_mapping_paid_active.xdrepplicensecount,xsiam_account_mapping_trial_active.xdrepplicensecount,account_mapping_trial_active.xdrepplicensecount,account_mapping_paid_expired.xdrepplicensecount,account_mapping_trial_expired.xdrepplicensecount /* ,pr.xdrepplicensecount ,agent.xdr_epp_license_purchased */) as xdrepplicensecount,
+    coalesce(xsiam_account_mapping_paid_active.xdredrlicensecount,account_mapping_paid_active.xdredrlicensecount,xsiam_account_mapping_trial_active.xdredrlicensecount,account_mapping_trial_active.xdredrlicensecount,account_mapping_paid_expired.xdredrlicensecount,account_mapping_trial_expired.xdredrlicensecount) as xdredrlicensecount,
+    coalesce(xsiam_account_mapping_paid_active.xdrtblicensecount,account_mapping_paid_active.xdrtblicensecount,xsiam_account_mapping_trial_active.xdrtblicensecount,account_mapping_trial_active.xdrtblicensecount,account_mapping_paid_expired.xdrtblicensecount,account_mapping_trial_expired.xdrtblicensecount /* ,pr.xdrtblicensecount */ ) as xdrtblicensecount,
+    coalesce(xsiam_account_mapping_paid_active.xdrgblicensecount,account_mapping_paid_active.xdrgblicensecount,xsiam_account_mapping_trial_active.xdrgblicensecount,account_mapping_trial_active.xdrgblicensecount,account_mapping_paid_expired.xdrgblicensecount,account_mapping_trial_expired.xdrgblicensecount) as xdrgblicensecount,
+    coalesce(xsiam_account_mapping_paid_active.xsiam_ep_licensecount,account_mapping_paid_active.xsiam_ep_licensecount,xsiam_account_mapping_trial_active.xsiam_ep_licensecount,account_mapping_trial_active.xsiam_ep_licensecount,account_mapping_paid_expired.xsiam_ep_licensecount,account_mapping_trial_expired.xsiam_ep_licensecount ) as xsiam_ep_licensecount,
+    coalesce(xsiam_account_mapping_paid_active.xsiam_fte_licensecount,account_mapping_paid_active.xsiam_fte_licensecount,xsiam_account_mapping_trial_active.xsiam_fte_licensecount,account_mapping_trial_active.xsiam_fte_licensecount,account_mapping_paid_expired.xsiam_fte_licensecount,account_mapping_trial_expired.xsiam_fte_licensecount ) as xsiam_fte_licensecount,
+    coalesce(xsiam_account_mapping_paid_active.xdrcloudedrlicensecount,account_mapping_paid_active.xdrcloudedrlicensecount,xsiam_account_mapping_trial_active.xdrcloudedrlicensecount,account_mapping_trial_active.xdrcloudedrlicensecount,account_mapping_paid_expired.xdrcloudedrlicensecount,account_mapping_trial_expired.xdrcloudedrlicensecount ) as xdrcloudedrlicensecount,    
+    coalesce(xsiam_account_mapping_paid_active.license_type,account_mapping_paid_active.license_type,xsiam_account_mapping_trial_active.license_type,account_mapping_trial_active.license_type,account_mapping_paid_expired.license_type,account_mapping_trial_expired.license_type ) as license_type,
+    coalesce(xsiam_account_mapping_paid_active.xsiamgblicensecount,account_mapping_paid_active.xsiamgblicensecount,xsiam_account_mapping_trial_active.xsiamgblicensecount,account_mapping_trial_active.xsiamgblicensecount,account_mapping_paid_expired.xsiamgblicensecount,account_mapping_trial_expired.xsiamgblicensecount) as xsiamgblicensecount,
+    coalesce(xsiam_account_mapping_paid_active.date,account_mapping_paid_active.date,xsiam_account_mapping_trial_active.date,account_mapping_trial_active.date,account_mapping_paid_expired.date,account_mapping_trial_expired.date,pr.partdate,agent.date,tb_usage.day) as date,
+    coalesce(xsiam_account_mapping_paid_active.tenant_id__c,account_mapping_paid_active.tenant_id__c,xsiam_account_mapping_trial_active.tenant_id__c,account_mapping_trial_active.tenant_id__c,account_mapping_paid_expired.tenant_id__c,account_mapping_trial_expired.tenant_id__c,account_mapping.tenant_id__c,pr.xdr_id,agent.xdr_id,account_mapping.tenant_id__c,account_mapping_1.tenant_id__c,account_mapping_2.tenant_id__c,tb_usage.cortex_id) as xdr_id,
+    coalesce(xsiam_account_mapping_paid_active.serial_number__c,account_mapping_paid_active.serial_number__c,xsiam_account_mapping_trial_active.serial_number__c,account_mapping_trial_active.serial_number__c,account_mapping_paid_expired.serial_number__c,account_mapping_trial_expired.serial_number__c,account_mapping.serial_number__c,account_mapping_1.serial_number__c,account_mapping_2.serial_number__c) as serial_number__c,
+    coalesce(xsiam_account_mapping_paid_active.accountid,account_mapping_paid_active.accountid,xsiam_account_mapping_trial_active.accountid,account_mapping_trial_active.accountid,account_mapping_paid_expired.accountid,account_mapping_trial_expired.accountid,account_mapping.sfdcaccountid,account_mapping_1.sfdcaccountid,account_mapping_2.sfdcaccountid) as accountid,
+    coalesce(xsiam_account_mapping_paid_active.xsiam_fte_licensecount_ent,account_mapping_paid_active.xsiam_fte_licensecount_ent,xsiam_account_mapping_trial_active.xsiam_fte_licensecount_ent,account_mapping_trial_active.xsiam_fte_licensecount_ent,account_mapping_paid_expired.xsiam_fte_licensecount_ent,account_mapping_trial_expired.xsiam_fte_licensecount_ent ) as xsiam_fte_licensecount_ent,
+    coalesce(xsiam_account_mapping_paid_active.xsiam_fte_licensecount_ent_plus,account_mapping_paid_active.xsiam_fte_licensecount_ent_plus,xsiam_account_mapping_trial_active.xsiam_fte_licensecount_ent_plus,account_mapping_trial_active.xsiam_fte_licensecount_ent_plus,account_mapping_paid_expired.xsiam_fte_licensecount_ent_plus,account_mapping_trial_expired.xsiam_fte_licensecount_ent_plus ) as xsiam_fte_licensecount_ent_plus,
+    coalesce(xsiam_account_mapping_paid_active.xsiam_addon_ep,account_mapping_paid_active.xsiam_addon_ep,xsiam_account_mapping_trial_active.xsiam_addon_ep,account_mapping_trial_active.xsiam_addon_ep,account_mapping_paid_expired.xsiam_addon_ep,account_mapping_trial_expired.xsiam_addon_ep ) as xsiam_addon_ep,
+    coalesce(xsiam_account_mapping_paid_active.xsiam_addon_ep_cloud,account_mapping_paid_active.xsiam_addon_ep_cloud,xsiam_account_mapping_trial_active.xsiam_addon_ep_cloud,account_mapping_trial_active.xsiam_addon_ep_cloud,account_mapping_paid_expired.xsiam_addon_ep_cloud,account_mapping_trial_expired.xsiam_addon_ep_cloud ) as xsiam_addon_ep_cloud,
+    coalesce(xsiam_account_mapping_paid_active.xsiam_base_ep_edr,account_mapping_paid_active.xsiam_base_ep_edr,xsiam_account_mapping_trial_active.xsiam_base_ep_edr,account_mapping_trial_active.xsiam_base_ep_edr,account_mapping_paid_expired.xsiam_base_ep_edr,account_mapping_trial_expired.xsiam_base_ep_edr ) as xsiam_base_ep_edr,
+    coalesce(xsiam_account_mapping_paid_active.xsiam_base_ep_cloud,account_mapping_paid_active.xsiam_base_ep_cloud,xsiam_account_mapping_trial_active.xsiam_base_ep_cloud,account_mapping_trial_active.xsiam_base_ep_cloud,account_mapping_paid_expired.xsiam_base_ep_cloud,account_mapping_trial_expired.xsiam_base_ep_cloud ) as xsiam_base_ep_cloud,
+    coalesce(round(daily_tb_usage,3),0) tb_usage_daily,
+    coalesce(round(monthly_tb_usage,3),0) tb_usage_monthly,
+    coalesce(xsiam_account_mapping_paid_active.is_trial__c,account_mapping_paid_active.is_trial__c,account_mapping_trial_active.is_trial__c,account_mapping_paid_expired.is_trial__c,account_mapping_trial_expired.is_trial__c,account_mapping.is_trial__c,account_mapping_1.is_trial__c,account_mapping_2.is_trial__c) as is_trial__c,
+    coalesce(xsiam_account_mapping_paid_active.status,account_mapping_paid_active.status,account_mapping_trial_active.status,account_mapping_paid_expired.status,account_mapping_trial_expired.status,account_mapping.status,account_mapping_1.status,account_mapping_2.status) as status,
+    coalesce(xsiam_account_mapping_paid_active.license_start_date,account_mapping_paid_active.license_start_date,account_mapping_trial_active.license_start_date,account_mapping_paid_expired.license_start_date,account_mapping_trial_expired.license_start_date,account_mapping.license_start_date,account_mapping_1.license_start_date,account_mapping_2.license_start_date) as license_start_date,
+    coalesce(xsiam_account_mapping_paid_active.license_end_date,account_mapping_paid_active.license_end_date,account_mapping_trial_active.license_end_date,account_mapping_paid_expired.license_end_date,account_mapping_trial_expired.license_end_date,account_mapping.license_end_date,account_mapping_1.license_end_date,account_mapping_2.license_end_date) as license_end_date,
+    coalesce(xsiam_account_mapping_paid_active.csp_id__c,account_mapping_paid_active.csp_id__c,account_mapping_trial_active.csp_id__c,account_mapping_paid_expired.csp_id__c,account_mapping_trial_expired.csp_id__c,account_mapping.csp_id__c,account_mapping_1.csp_id__c,account_mapping_2.csp_id__c) as csp_id__c,
+    coalesce(xsiam_account_mapping_paid_active.is_nfr,account_mapping_paid_active.is_nfr,account_mapping_trial_active.is_nfr,account_mapping_paid_expired.is_nfr,account_mapping_trial_expired.is_nfr,account_mapping.is_nfr,account_mapping_1.is_nfr,account_mapping_2.is_nfr) as is_nfr,
+    coalesce (tb_usage.total_size_bytes,0) as total_size_bytes,
+    coalesce (tb_usage.daily_ingestion_size_gb,0) as daily_ingestion_size_gb,
+    coalesce (tb_usage.daily_ingestion_size_tb,0) as daily_ingestion_size_tb,
+    coalesce (tb_usage._7d_avg_daily_ingestion_size_gb,0) as _7d_avg_daily_ingestion_size_gb,
+    coalesce (tb_usage._7d_max_daily_ingestion_size_gb,0) as _7d_max_daily_ingestion_size_gb,
+    coalesce (tb_usage.monthly_ingestion_size_gb,0) as monthly_ingestion_size_gb,
+    --
+    coalesce (pr.mac_agents_wks_v7_6_agents,agent.mac_agents_wks_v7_6_agents) as mac_agents_wks_v7_6_agents,
+    coalesce (pr.mac_agents_wks_v7_5_agents,agent.mac_agents_wks_v7_5_agents) as mac_agents_wks_v7_5_agents,
+    coalesce (pr.mac_agents_wks_v7_4_agents,agent.mac_agents_wks_v7_4_agents) as mac_agents_wks_v7_4_agents,
+    coalesce (pr.mac_agents_wks_v7_3_agents,agent.mac_agents_wks_v7_3_agents) as mac_agents_wks_v7_3_agents,
+    coalesce (pr.mac_agents_wks_v7_2_agents,agent.mac_agents_wks_v7_2_agents) as mac_agents_wks_v7_2_agents,
+    coalesce (pr.mac_agents_wks_v7_1_agents,agent.mac_agents_wks_v7_1_agents) as mac_agents_wks_v7_1_agents,
+    coalesce (pr.mac_agents_wks_v7_0_agents,agent.mac_agents_wks_v7_0_agents) as mac_agents_wks_v7_0_agents,
+    coalesce (pr.mac_agents_wks_v6_1_agents,agent.mac_agents_wks_v6_1_agents) as mac_agents_wks_v6_1_agents,
+    coalesce (pr.mac_agents_wks_v6_0_agents,agent.mac_agents_wks_v6_0_agents) as mac_agents_wks_v6_0_agents,
+    coalesce (pr.mac_agents_wks_v5_0_agents,agent.mac_agents_wks_v5_0_agents) as mac_agents_wks_v5_0_agents,
+    coalesce (pr.android_agents_mobile_v7_1_agents,agent.android_agents_mobile_v7_1_agents) as android_agents_mobile_v7_1_agents,
+    coalesce (pr.android_agents_mobile_v7_0_agents,agent.android_agents_mobile_v7_0_agents) as android_agents_mobile_v7_0_agents,
+    coalesce (pr.android_agents_mobile_v6_0_agents,agent.android_agents_mobile_v6_0_agents) as android_agents_mobile_v6_0_agents,
+    coalesce (pr.android_agents_mobile_v5_0_agents,agent.android_agents_mobile_v5_0_agents) as android_agents_mobile_v5_0_agents,
+    coalesce (pr.lnx_agents_containerized_v7_6_agents,agent.lnx_agents_containerized_v7_6_agents) as lnx_agents_containerized_v7_6_agents,
+    coalesce (pr.lnx_agents_containerized_v7_5_agents,agent.lnx_agents_containerized_v7_5_agents) as lnx_agents_containerized_v7_5_agents,
+    coalesce (pr.lnx_agents_srv_v7_6_agents,agent.lnx_agents_srv_v7_6_agents) as lnx_agents_srv_v7_6_agents,
+    coalesce (pr.lnx_agents_srv_v7_5_agents,agent.lnx_agents_srv_v7_5_agents) as lnx_agents_srv_v7_5_agents,
+    coalesce (pr.lnx_agents_srv_v7_4_agents,agent.lnx_agents_srv_v7_4_agents) as lnx_agents_srv_v7_4_agents,
+    coalesce (pr.lnx_agents_srv_v7_3_agents,agent.lnx_agents_srv_v7_3_agents) as lnx_agents_srv_v7_3_agents,
+    coalesce (pr.lnx_agents_srv_v7_2_agents,agent.lnx_agents_srv_v7_2_agents) as lnx_agents_srv_v7_2_agents,
+    coalesce (pr.lnx_agents_srv_v7_1_agents,agent.lnx_agents_srv_v7_1_agents) as lnx_agents_srv_v7_1_agents,
+    coalesce (pr.lnx_agents_srv_v7_0_agents,agent.lnx_agents_srv_v7_0_agents) as lnx_agents_srv_v7_0_agents,
+    coalesce (pr.lnx_agents_srv_v6_1_agents,agent.lnx_agents_srv_v6_1_agents) as lnx_agents_srv_v6_1_agents,
+    coalesce (pr.lnx_agents_srv_v6_0_agents,agent.lnx_agents_srv_v6_0_agents) as lnx_agents_srv_v6_0_agents,
+    coalesce (pr.lnx_agents_srv_v5_0_agents,agent.lnx_agents_srv_v5_0_agents) as lnx_agents_srv_v5_0_agents,
+    coalesce (pr.win_agents_srv_v7_6_agents,agent.win_agents_srv_v7_6_agents) as win_agents_srv_v7_6_agents,
+    coalesce (pr.win_agents_srv_v7_5_agents,agent.win_agents_srv_v7_5_agents) as win_agents_srv_v7_5_agents,
+    coalesce (pr.win_agents_srv_v7_4_agents,agent.win_agents_srv_v7_4_agents) as win_agents_srv_v7_4_agents,
+    coalesce (pr.win_agents_srv_v7_3_agents,agent.win_agents_srv_v7_3_agents) as win_agents_srv_v7_3_agents,
+    coalesce (pr.win_agents_srv_v7_2_agents,agent.win_agents_srv_v7_2_agents) as win_agents_srv_v7_2_agents,
+    coalesce (pr.win_agents_srv_v7_1_agents,agent.win_agents_srv_v7_1_agents) as win_agents_srv_v7_1_agents,
+    coalesce (pr.win_agents_srv_v7_0_agents,agent.win_agents_srv_v7_0_agents) as win_agents_srv_v7_0_agents,
+    coalesce (pr.win_agents_srv_v6_1_agents,agent.win_agents_srv_v6_1_agents) as win_agents_srv_v6_1_agents,
+    coalesce (pr.win_agents_srv_v6_0_agents,agent.win_agents_srv_v6_0_agents) as win_agents_srv_v6_0_agents,
+    coalesce (pr.win_agents_srv_v5_0_agents,agent.win_agents_srv_v5_0_agents) as win_agents_srv_v5_0_agents,
+    coalesce (pr.win_agents_wks_v7_6_agents,agent.win_agents_wks_v7_6_agents) as win_agents_wks_v7_6_agents,
+    coalesce (pr.win_agents_wks_v7_5_agents,agent.win_agents_wks_v7_5_agents) as win_agents_wks_v7_5_agents,
+    coalesce (pr.win_agents_wks_v7_4_agents,agent.win_agents_wks_v7_4_agents) as win_agents_wks_v7_4_agents,
+    coalesce (pr.win_agents_wks_v7_3_agents,agent.win_agents_wks_v7_3_agents) as win_agents_wks_v7_3_agents,
+    coalesce (pr.win_agents_wks_v7_2_agents,agent.win_agents_wks_v7_2_agents) as win_agents_wks_v7_2_agents,
+    coalesce (pr.win_agents_wks_v7_1_agents,agent.win_agents_wks_v7_1_agents) as win_agents_wks_v7_1_agents,
+    coalesce (pr.win_agents_wks_v7_0_agents,agent.win_agents_wks_v7_0_agents) as win_agents_wks_v7_0_agents,
+    coalesce (pr.win_agents_wks_v6_1_agents,agent.win_agents_wks_v6_1_agents) as win_agents_wks_v6_1_agents,
+    coalesce (pr.win_agents_wks_v6_0_agents,agent.win_agents_wks_v6_0_agents) as win_agents_wks_v6_0_agents,
+    coalesce (pr.win_agents_wks_v5_0_agents,agent.win_agents_wks_v5_0_agents) as win_agents_wks_v5_0_agents,
+    --
+    coalesce (pr.xdreppagentcount,agent.xdr_kpi_epp_active_agents) as xdreppagentcount,
+    coalesce (pr.xdredragentcount,agent.xdr_kpi_pro_active_agents) as xdredragentcount,
+    coalesce (pr.xdrcloudagentscount,agent.xdr_kpi_cloud_active_agents) as xdrcloudagentscount,
+    coalesce (pr.xdrcloudproagentscount,0) as xdrcloudproagentscount,
+    coalesce (pr.analytics_enabled,0) as analytics_enabled,
+
+
+  agent.*except(lcaas_id,xdr_epp_license_purchased,xdr_edr_license_purchased,date,mac_agents_wks_v7_6_agents,mac_agents_wks_v7_5_agents,mac_agents_wks_v7_4_agents,mac_agents_wks_v7_3_agents,mac_agents_wks_v7_2_agents,mac_agents_wks_v7_1_agents,mac_agents_wks_v7_0_agents,mac_agents_wks_v6_1_agents,mac_agents_wks_v6_0_agents,mac_agents_wks_v5_0_agents,android_agents_mobile_v7_1_agents,android_agents_mobile_v7_0_agents,android_agents_mobile_v6_0_agents,android_agents_mobile_v5_0_agents,lnx_agents_containerized_v7_6_agents,lnx_agents_containerized_v7_5_agents, lnx_agents_srv_v7_6_agents, lnx_agents_srv_v7_5_agents, lnx_agents_srv_v7_4_agents, lnx_agents_srv_v7_3_agents, lnx_agents_srv_v7_2_agents, lnx_agents_srv_v7_1_agents, lnx_agents_srv_v7_0_agents, lnx_agents_srv_v6_1_agents, lnx_agents_srv_v6_0_agents, lnx_agents_srv_v5_0_agents, win_agents_srv_v7_6_agents, win_agents_srv_v7_5_agents, win_agents_srv_v7_4_agents, win_agents_srv_v7_3_agents, win_agents_srv_v7_2_agents, win_agents_srv_v7_1_agents, win_agents_srv_v7_0_agents, win_agents_srv_v6_1_agents, win_agents_srv_v6_0_agents, win_agents_srv_v5_0_agents, win_agents_wks_v7_6_agents, win_agents_wks_v7_5_agents, win_agents_wks_v7_4_agents, win_agents_wks_v7_3_agents, win_agents_wks_v7_2_agents, win_agents_wks_v7_1_agents, win_agents_wks_v7_0_agents, win_agents_wks_v6_1_agents, win_agents_wks_v6_0_agents, win_agents_wks_v5_0_agents,xdr_id,analytics_enabled),
+
+  pr.*except(lcaas_id,xdrepplicensecount,xdredrlicensecount,xdrtblicensecount,partdate,mac_agents_wks_v7_6_agents,mac_agents_wks_v7_5_agents,mac_agents_wks_v7_4_agents,mac_agents_wks_v7_3_agents,mac_agents_wks_v7_2_agents,mac_agents_wks_v7_1_agents,mac_agents_wks_v7_0_agents,mac_agents_wks_v6_1_agents,mac_agents_wks_v6_0_agents,mac_agents_wks_v5_0_agents,android_agents_mobile_v7_1_agents,android_agents_mobile_v7_0_agents,android_agents_mobile_v6_0_agents,android_agents_mobile_v5_0_agents,lnx_agents_containerized_v7_6_agents,lnx_agents_containerized_v7_5_agents, lnx_agents_srv_v7_6_agents, lnx_agents_srv_v7_5_agents, lnx_agents_srv_v7_4_agents, lnx_agents_srv_v7_3_agents, lnx_agents_srv_v7_2_agents, lnx_agents_srv_v7_1_agents, lnx_agents_srv_v7_0_agents, lnx_agents_srv_v6_1_agents, lnx_agents_srv_v6_0_agents, lnx_agents_srv_v5_0_agents, win_agents_srv_v7_6_agents, win_agents_srv_v7_5_agents, win_agents_srv_v7_4_agents, win_agents_srv_v7_3_agents, win_agents_srv_v7_2_agents, win_agents_srv_v7_1_agents, win_agents_srv_v7_0_agents, win_agents_srv_v6_1_agents, win_agents_srv_v6_0_agents, win_agents_srv_v5_0_agents, win_agents_wks_v7_6_agents, win_agents_wks_v7_5_agents, win_agents_wks_v7_4_agents, win_agents_wks_v7_3_agents, win_agents_wks_v7_2_agents, win_agents_wks_v7_1_agents, win_agents_wks_v7_0_agents, win_agents_wks_v6_1_agents, win_agents_wks_v6_0_agents, win_agents_wks_v5_0_agents,xdr_id,xdreppagentcount,xdredragentcount,xdrcloudagentscount,analytics_enabled,snapshot_ingestion_time,xdrcloudproagentscount),
+
+  from
+  /**e2e**/`itp-aia-datalake.cortex.vw_xdr_prometheus_metrics_mapping_snapshot` pr
+  left join
+  /**e2e**/`itp-aia-datalake.cortex.agent_data_enriched` agent
+    on  pr.partdate = agent.date
+    and pr.xdr_id = agent.xdr_id
+
+full outer join
+   cortex_daily_tb_usage tb_usage
+on
+  pr.partdate = tb_usage.day
+  and pr.xdr_id = tb_usage.cortex_id
+  and pr.lcaas_id = tb_usage.lcaas_id
+
+  left join
+    /**e2e**/xdr_account_mapping xsiam_account_mapping_paid_active
+    on  coalesce(pr.partdate,agent.date,tb_usage.day) = xsiam_account_mapping_paid_active.date
+    and coalesce(pr.xdr_id,agent.xdr_id,tb_usage.cortex_id) = xsiam_account_mapping_paid_active.tenant_id__c
+    and xsiam_account_mapping_paid_active.is_trial__c = 'paid'  and xsiam_account_mapping_paid_active.status = 'active'  and xsiam_account_mapping_paid_active.license_type = "xsiam"
+  left join
+    /**e2e**/xdr_account_mapping account_mapping_paid_active
+    on  coalesce(pr.partdate,agent.date,tb_usage.day) = account_mapping_paid_active.date
+    and coalesce(pr.xdr_id,agent.xdr_id,tb_usage.cortex_id) = account_mapping_paid_active.tenant_id__c
+    and account_mapping_paid_active.is_trial__c = 'paid'  and account_mapping_paid_active.status = 'active'  and account_mapping_paid_active.license_type = "xdr"
+    and xsiam_account_mapping_paid_active.tenant_id__c is null
+  left join
+    /**e2e**/xdr_account_mapping xsiam_account_mapping_trial_active
+    on  coalesce(pr.partdate,agent.date,tb_usage.day) = xsiam_account_mapping_trial_active.date
+    and coalesce(pr.xdr_id,agent.xdr_id,tb_usage.cortex_id) = xsiam_account_mapping_trial_active.tenant_id__c
+    and xsiam_account_mapping_trial_active.is_trial__c = 'trial'  and xsiam_account_mapping_trial_active.status = 'active'  and account_mapping_paid_active.license_type = "xsiam"
+    and xsiam_account_mapping_paid_active.tenant_id__c is null
+    and account_mapping_paid_active.tenant_id__c is null
+  left join
+    /**e2e**/xdr_account_mapping account_mapping_trial_active
+    on  coalesce(pr.partdate,agent.date,tb_usage.day) = account_mapping_trial_active.date
+    and coalesce(pr.xdr_id,agent.xdr_id,tb_usage.cortex_id) = account_mapping_trial_active.tenant_id__c
+    and account_mapping_trial_active.is_trial__c = 'trial'  and account_mapping_trial_active.status = 'active'  and account_mapping_paid_active.license_type = "xdr"
+    and xsiam_account_mapping_paid_active.tenant_id__c is null
+    and xsiam_account_mapping_trial_active.tenant_id__c is null
+    and account_mapping_paid_active.tenant_id__c is null
+  left join
+    /**e2e**/xdr_account_mapping account_mapping_paid_expired
+    on  coalesce(pr.partdate,agent.date,tb_usage.day) = account_mapping_paid_expired.date
+    and coalesce(pr.xdr_id,agent.xdr_id,tb_usage.cortex_id) = account_mapping_paid_expired.tenant_id__c
+    and account_mapping_paid_expired.is_trial__c = 'paid'  and account_mapping_paid_expired.status = 'expired'
+    and xsiam_account_mapping_paid_active.tenant_id__c is null
+    and xsiam_account_mapping_trial_active.tenant_id__c is null
+    and account_mapping_paid_active.tenant_id__c is null
+    and account_mapping_trial_active.tenant_id__c is null
+  left join
+    /**e2e**/xdr_account_mapping account_mapping_trial_expired
+    on  coalesce(pr.partdate,agent.date,tb_usage.day) = account_mapping_trial_expired.date
+    and coalesce(pr.xdr_id,agent.xdr_id,tb_usage.cortex_id) = account_mapping_trial_expired.tenant_id__c
+    and account_mapping_trial_expired.is_trial__c = 'trial'  and account_mapping_trial_expired.status = 'expired'
+    and xsiam_account_mapping_paid_active.tenant_id__c is null
+    and xsiam_account_mapping_trial_active.tenant_id__c is null
+    and account_mapping_paid_active.tenant_id__c is null
+    and account_mapping_trial_active.tenant_id__c is null
+    and account_mapping_paid_expired.tenant_id__c is null
+ left join
+   (
+    select tenant_id__c, max(sfdcaccountid) sfdcaccountid
+    ,min(license_start_date) as license_start_date
+    ,max(license_end_date) as license_end_date
+    ,max(csp_id__c) csp_id__c
+    ,max(is_trial__c) is_trial__c
+    ,max(serial_number__c) serial_number__c
+    ,'active' as status
+    ,'no'  is_nfr
+from
+    /**e2e**/`itp-aia-datalake.cortex.vw_xdr_sfdc_account_mapping` group by 1
+   ) account_mapping
+     on coalesce(pr.xdr_id,agent.xdr_id,tb_usage.cortex_id) = account_mapping.tenant_id__c
+    and xsiam_account_mapping_paid_active.tenant_id__c is null
+    and xsiam_account_mapping_trial_active.tenant_id__c is null
+    and account_mapping_paid_active.tenant_id__c is null
+    and account_mapping_trial_active.tenant_id__c is null
+    and account_mapping_paid_expired.tenant_id__c is null
+  and account_mapping_trial_expired.tenant_id__c is null
+
+/* all xdr tenants */
+ left join
+   (
+select
+   tenant_id__c, max(accountid) sfdcaccountid
+    ,min(startdate) as license_start_date
+    ,max(enddate) as license_end_date
+    ,max(csp_id__c) csp_id__c
+    ,max(serial_number__c) serial_number__c
+    ,max(case when is_trial__c = true then 'trial' else 'paid' end ) is_trial__c
+    ,max(status)status
+    ,'no'  is_nfr
+
+    from
+    /**e2e**/`itp-aia-datalake.gcs_cs_cortex.vw_cortex_entitlements` /* all xdr tenants */
+    where
+    1 = 1
+and   (productcode  =  'pan-xsiam-base-cloud'
+    or productcode  =  'pan-xsiam-base-ep'
+    or productcode  =  'pan-xdr-adv-ep' 
+    or productcode  =  'pan-xdr-adv-ep-usg'
+    or productcode  =  'pan-xdr-adv-ep-cloud'
+    or productcode  =  'pan-xdr-prvt' 
+    or productcode  =  'pan-xdr-prvt-usg' 
+    or productcode  =  'pan-xdr-adv-1tb'
+    or productcode  =  'pan-xdr-adv-1tb-usg' 
+    or productcode  =  'pan-xdr-adv-nocdl-1tb' 
+    or productcode  =  'pan-xdr-adv-nocdl-1tb-usg'
+    or productcode  =  'pan-xdr-pro-gb'
+    or productcode  =  'pan-xsiam-adv-ep-cloud'
+    or productcode  =  'pan-xsiam-adv-ep-cloud'
+    
+    )
+and productcode !="pan-xdr-adv-ep-hot-rtn" and productcode !="pan-xdr-adv-ep-cold-rtn"    
+and tenant_id__c is not null group by 1
+   ) account_mapping_1
+     on coalesce(pr.xdr_id,agent.xdr_id,tb_usage.cortex_id) = account_mapping_1.tenant_id__c
+
+ /* non xdr tenants */
+
+ left join
+(
+select
+   tenant_id__c, max(accountid) sfdcaccountid
+    ,min(startdate) as license_start_date
+    ,max(enddate) as license_end_date
+    ,max(csp_id__c) csp_id__c
+    ,max(serial_number__c) serial_number__c
+    ,max(case when is_trial__c = true then 'trial' else 'paid' end ) is_trial__c
+    ,max(status)status
+    ,'no'  is_nfr
+
+    from
+    /**e2e**/`itp-aia-datalake.gcs_cs_cortex.vw_cortex_entitlements` /* non xdr tenants */
+    where
+    1 = 1
+and tenant_id__c is not null group by 1
+   ) account_mapping_2
+     on coalesce(pr.xdr_id,agent.xdr_id,tb_usage.cortex_id) = account_mapping_2.tenant_id__c
+)
+"""
+
+@pytest.fixture
+def atlan_failed_query_entries_10() -> List[QueryEvent]:
+    return [
+        QueryEvent(
+            timestamp=datetime.datetime.now(tz=datetime.timezone.utc),
+            actor_email="unknown",  # Replace with actual service account if known
+            query=FAILED_ATLAN_QUERY_V2_3,  # Replace with your actual query string variable
+            statementType="CREATE_TABLE_AS_SELECT",
+            project_id="itp-aia-datalake",
+            referencedViews=[
+                BigQueryTableRef.from_string_name("projects/itp-aia-datalake/datasets/cortex/tables/vw_xdr_prometheus_metrics_mapping_snapshot"),
+                BigQueryTableRef.from_string_name("projects/itp-aia-datalake/datasets/cortex/tables/agent_data_enriched"),
+                BigQueryTableRef.from_string_name("projects/itp-aia-datalake/datasets/cortex/tables/cortex_daily_tb_usage"),
+                BigQueryTableRef.from_string_name("projects/itp-aia-datalake/datasets/cortex/tables/xdr_account_mapping"),
+                BigQueryTableRef.from_string_name("projects/itp-aia-datalake/datasets/cortex/tables/vw_xdr_sfdc_account_mapping"),
+                BigQueryTableRef.from_string_name("projects/itp-aia-datalake/datasets/gcs_cs_cortex/tables/vw_cortex_entitlements"),
+            ],
+            destinationTable=BigQueryTableRef.from_string_name(
+                "projects/itp-aia-datalake/datasets/cortex_dm/tables/tb_xdr_prometheus_agents_metrics_daily_temp"
+            ),
+        )
+    ]
+
+
+def test_broken_atlan_lineage(atlan_failed_query_entries_10: List[QueryEvent]) -> None:
     config = BigQueryV2Config()
     report = BigQueryV2Report()
     extractor: BigqueryLineageExtractor = BigqueryLineageExtractor(
@@ -582,8 +965,9 @@ def test_broken_atlan_lineage(atlan_failed_query_entries_7: List[QueryEvent]) ->
     # )
 
     lineage_map: Dict[str, Set[LineageEdge]] = extractor._create_lineage_map(
-        iter(atlan_failed_query_entries_7)
+        iter(atlan_failed_query_entries_10)
     )
+    logging.info("Lineage map: %s", lineage_map)
     print(lineage_map)
 
     assert 1 == 2
